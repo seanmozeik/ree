@@ -219,7 +219,7 @@ def main():
         _, status = os.waitpid(pid, 0)
         returncode = os.waitstatus_to_exitcode(status)
         if returncode != 0:
-            fail(f"PTY child exited {returncode}")
+            fail(f"PTY child exited {returncode}; captured output: {bytes(output)!r}")
         assert_output_contract(output)
 
     print("pty test passed")
