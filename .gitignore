@@ -1,10 +1,4 @@
-# Zig build artifacts
-zig-out/
-.zig-cache/
-zig-cache/
-
-# Local binaries
-/rst
-/fast-reset
-*.o
-*.obj
+/target/
+/npm/
+/node_modules/
+*.tgz

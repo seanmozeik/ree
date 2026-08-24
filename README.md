@@ -1,119 +1,208 @@
-<img width="115" height="86.4" style="margin-bottom: -10px" alt="make-transparent-old-school-cropped" src="https://github.com/user-attachments/assets/77dcf905-73fe-4d9b-82d2-de953f84d2e6" />
+# ree
 
-# rst
+`ree` repairs a terminal after a program leaves it in raw mode or changes the
+emulator state. Type `ree` blind and press Enter when input, echo, the cursor,
+or the screen is broken.
 
-`rst` is a fast terminal reset for macOS and Linux. When your terminals "breaks", you run `reset`, but it takes a second. `rst` takes 2 milliseconds. 
+The command repairs the kernel TTY state, reads the compiled terminfo entry,
+and writes the same reset capabilities used by `tput reset`. It has no ncurses
+dependency and does not use the historical one-second hardware-settling sleep.
 
-It repairs the kernel TTY state and emits the terminal's terminfo reset strings, without the 1s sleep that `reset` inherits from 3BSD's `tset(1)`, meant for mechanical printer-and-ink terminals to 'settle down'.
+`ree` is a Rust rewrite of Guillermo Rauch's
+[`rst`](https://github.com/rauchg/rst). The terminal behavior and Apache-2.0
+license come from that project.
 
-- **Fast**: ~**2ms** vs **~1 second** for `/usr/bin/reset`.
-- **Tiny**: 162 KB, smaller than the system `reset` (164 KB) it replaces.
-- **Self-contained**: parses the terminfo database itself; links only libc, no ncurses.
-- **Compatible**: emits the same reset strings as ncurses `tput reset`, and falls back to VT escapes when no terminfo entry exists (e.g. SSH to an older host).
+## What it repairs
 
-## What it does
+### Kernel TTY state
 
-1. **Kernel TTY state.** Restores canonical/cooked input, echo, signals, CR/NL mapping, and output processing. Only repairs *disabled* control characters, preserving user customizations such as an erase key set to `^H` (matching ncurses). Uses `TCSAFLUSH` to discard stale typeahead a crashed raw-mode program may have left in the input queue. Undoes a stuck `^S` / `TCOOFF` via `tcflow(TCOON)` before touching termios, so reset itself can't hang behind stopped output. Refuses to run as a background job (checks `tcgetpgrp`) so it never writes to another job's terminal.
-2. **Terminal emulator state.** Reads the terminal's compiled terminfo entry directly (no ncurses dependency) and emits the terminal's reset strings in the same order ncurses `tput reset` uses — `rs1`, `rs2`, `clear_margins`, `rs3`, with each `rsN` falling back to the corresponding `isN` when absent. For known VT-compatible terminals it first sends a small hard-coded cleanup sequence (synchronized output, mouse, focus, paste off), and only when no terminfo entry is found does it use a hard-coded VT fallback. That makes it recover even when a terminfo entry is absent (e.g. SSHing from a newer terminal to an older host).
+`ree` restores canonical input, echo, signals, CR/NL mapping, and output
+processing. It repairs a control character only when that character is
+disabled, so a valid customization such as an erase key set to `^H` remains in
+place.
 
-It locates a TTY on stderr, stdout, stdin (reopened read-write), or `/dev/tty`.
+The update uses `TCSAFLUSH` to discard stale typeahead from a crashed raw-mode
+program. It also resumes a stopped output queue before reading or changing the
+termios state, which recovers a terminal stuck after `^S` or `TCOOFF`.
+
+The command checks the terminal foreground process group before it changes or
+writes anything. A background job exits without a diagnostic because writing
+that diagnostic could itself send `SIGTTOU`.
+
+### Terminal emulator state
+
+`ree` reads the standard and extended compiled terminfo formats directly. It
+emits these capabilities in ncurses order:
+
+1. `rs1`, with `is1` as its fallback
+2. `rs2`, with `is2` as its fallback
+3. `clear_margins`
+4. `rs3`, with `is3` as its fallback
+
+Known VT-compatible terminals first receive a cleanup sequence. It ends a
+stray terminal string, disables synchronized output, mouse and focus reports,
+bracketed paste, terminal reports, and Kitty paste events. It also clears the
+Kitty keyboard stack and disables xterm `modifyOtherKeys`. If no terminfo entry
+exists, the terminal receives a fixed VT reset sequence. This fallback is
+useful when a newer local terminal connects to an older host over SSH.
+
+`ree` looks for a writable TTY on stderr, stdout, stdin, and `/dev/tty`, in that
+order. A TTY found on read-only stdin is reopened read-write.
+
+### Ghostty and shells
+
+Ghostty uses `TERM=xterm-ghostty` and supplies its compiled terminfo entry
+through `TERMINFO`. `ree` searches that location first. Its cleanup covers
+Ghostty's synchronized output, mouse encodings, focus reports, color-scheme and
+visibility reports, in-band size reports, Kitty paste events, Kitty keyboard
+stack, and `modifyOtherKeys`. Ghostty's `rs1` then sends RIS, which resets the
+screen, alternate screen, keyboard state, terminal modes, and progress state.
+
+The command does not depend on a specific shell. Nushell uses Reedline, which
+can enable bracketed paste and push Kitty keyboard flags while it reads input.
+`ree` disables both states. Bash, Elvish, Fish, Nushell, and Zsh can all run the
+same binary. When a remote host does not have the `xterm-ghostty` entry, the VT
+fallback still sends RIS.
 
 ## Examples
 
-Common ways to break your terminal — and how `rst` recovers them. Type `rst` blind (you won't see it, but it will execute) and hit Enter to recover.
+| Break command | Result | Repaired |
+| --- | --- | --- |
+| `cat /dev/urandom` | Random escape sequences change terminal state | Yes |
+| `printf '\e[?1049h'` | Alternate screen hides scrollback | Yes |
+| `printf '\e[?25l'` | Cursor disappears | Yes |
+| `printf '\e[8m'` | Text becomes concealed | Yes |
+| `printf '\e(0'` | DEC line-drawing characters replace text | Yes |
+| `printf '\e[?1003h\e[?1006h'` | Mouse events appear as input | Yes |
+| `stty raw` | Line editing, echo, and signals stop | Yes |
+| `stty -opost -onlcr` | Output starts to stair-step | Yes |
 
-| Break command | What it does | rst fixes |
-|---|---|---|
-| `cat /dev/urandom` | Binary garbage leaves random escape sequences and alternate charset active | ✓ |
-| `printf '\e[?1049h'` | Enters alternate screen; scrollback vanishes | ✓ |
-| `printf '\e[?25l'` | Hides the cursor | ✓ |
-| `printf '\e[8m'` | Invisible (concealed) text | ✓ |
-| `printf '\e(0'` | DEC line-drawing charset; text becomes garbage symbols | ✓ |
-| `printf '\e[4h'` | Insert mode; typing pushes text right | ✓ |
-| `printf '\e[?5h'` | Reverse video | ✓ |
-| `stty raw` | Raw mode; line editing dies (use Ctrl-J to submit) | ✓ |
-| `printf '\e[3;10;20t'` | Resizes the terminal window (on supporting terminals) | ✓ |
-| `printf '\e[r\e[H'` | Resets scroll region and moves cursor home | ✓ |
-| `stty -opost -onlcr` | Disables output processing; `ls` columns stairstep | ✓ |
-| `printf '\e[?1003h\e[?1006h'` | Enables mouse reporting; clicking/dragging spews escape garbage into your prompt | ✓ |
-| `stty -icanon min 1; stty -isig` | Disables canonical mode and signals; Ctrl-C and line editing stop working | ✓ |
+## CLI
 
-## Build
-
-Requires [Zig 0.16.0](https://ziglang.org). No ncurses or other external libraries — `rst` parses the terminfo database itself and links only libc:
-
-```sh
-zig build --release
+```text
+ree
+ree --help
+ree --version
 ```
 
-The binary is installed to `zig-out/bin/rst`. It links only the system C library (`libSystem` on macOS, `libc` on Linux) — no shared-library dependency on ncurses.
+The CLI is declared with
+[`usage-rs`](https://github.com/jdx/usage). The same typed declaration handles
+argument parsing, help, version output, diagnostics, and the portable Usage
+spec endpoint:
+
+```text
+ree __usage_spec__
+```
+
+The endpoint prints KDL that `usage` can convert to documentation, man pages,
+completions, or JSON.
 
 ## Install
 
-```sh
-zig build --release
-install -m 0755 zig-out/bin/rst /usr/local/bin/rst
+The crates.io package is named `ree-cli` because another project owns the
+`ree` crate name. The npm package uses Sean's scope. Both packages install a
+command named `ree`.
+
+```text
+cargo install ree-cli
+bun add --global @seanmozeik/ree
 ```
 
-Or put it anywhere earlier on `PATH` than `/usr/bin` to shadow the system `reset`.
+The npm release contains these native packages:
+
+| System | CPU | Rust target |
+| --- | --- | --- |
+| macOS | arm64 | `aarch64-apple-darwin` |
+| macOS | x86-64 | `x86_64-apple-darwin` |
+| Linux, glibc | arm64 | `aarch64-unknown-linux-gnu` |
+| Linux, glibc | x86-64 | `x86_64-unknown-linux-gnu` |
+
+Linux binaries use a glibc 2.17 baseline.
+
+## Build
+
+`ree` requires Rust 1.95 or newer. The repository selects the stable toolchain
+and uses Rust 2024 edition.
+
+```text
+just build-release
+just build-all
+just install
+```
+
+The release profile optimizes for size and uses fat LTO, one codegen unit,
+abort-on-panic, and symbol stripping. It links the standard system libraries
+and does not link ncurses. `just size-check` enforces a 600,000-byte host
+budget. `just size-check-all` applies the same limit to all four release
+binaries. `just glibc-check` enforces the Linux ABI baseline.
+
+## Package and publish
+
+The Cargo version is the one version source for crates.io and all five npm
+packages. Packaging reads Cargo metadata and uses binaries from `target/`.
+
+```text
+just pack
+just publish-cargo-dry-run
+just publish-npm-dry-run
+just verify-release
+```
+
+The npm publisher sends the four platform packages before the root package.
+The dry-run recipes do not change either registry. The real publish recipes
+are `just publish-cargo` and `just publish-npm`.
 
 ## Test
 
-A portable PTY test builds the binary, puts a TTY into a deliberately broken raw/no-echo state, runs `rst`, and verifies that canonical mode and echo were restored:
-
-```sh
-zig build test
-python3 scripts/pty-test.py zig-out/bin/rst
+```text
+just check
+just test
+just test-doc
+just pty
+just size-check
 ```
 
-The unit suite includes a seed corpus for the terminfo parser. On architectures supported by Zig's native fuzzer (including CI's x86_64 Linux runner), run 100,000 fuzz iterations with `zig build test -Drelease --fuzz=100K`.
+`just verify` runs the local gates. The recipes use strict shell settings,
+grouped help, locked Cargo commands, optional `rtk`, a `nextest` fallback, and
+a 350-line source-file budget. `just verify-release` also checks every release
+artifact and both registry packages.
 
-## Prior art
-
-The mechanism is established prior art; `rst` is a polished, cross-platform Zig package, not the first fast reset.
-
-- **BusyBox `reset`** — a ~676-byte applet that emits fixed reset escapes, runs `stty sane`, and performs no settling sleep. ([console-tools/reset.c](https://github.com/mirror/busybox/blob/master/console-tools/reset.c))
-- **Toybox `reset`** — the closest philosophical match. Its source says: *"In 1979 3BSD's tset had a sleep(1) to let mechanical printer-and-ink terminals 'settle down'. We're not doing that."* ([toys/other/reset.c](https://github.com/landley/toybox/blob/master/toys/other/reset.c), [2015 introduction](https://github.com/landley/toybox/commit/5b2644cafc8a619b617ba0fbb5473667dbd634ba), [2023 cooked-mode fix](https://github.com/landley/toybox/commit/d93384a1050919c093ffa2532e88e7371db9ac33))
-- **ncurses `tput reset`** — upstream ncurses moved the terminal-mode part of `reset` into `tput reset` in [2016](https://github.com/mirror/ncurses/commit/29a36e53e1f77a0c3672f2e267d573823d6a9a60) and refined it in [2017](https://github.com/mirror/ncurses/commit/58552e8c767a70f8f0bd591fecdf576fa8216e3e), without `tset`'s hardware-settling wait. ([tput(1)](https://invisible-island.net/ncurses/man/tput.1.html))
-
-A no-code fast alternative on any system with ncurses is:
-
-```sh
-reset -I && tput reset
-```
-
-`rst` packages the same idea into a single dependency-free standalone binary — it reads the terminfo database itself rather than linking ncurses.
+The PTY test zeros the input, output, and local termios flags, disables every
+control character, and checks the repaired flag groups. It checks
+`xterm-ghostty`, a missing-terminfo fallback, a background process group, a
+process without terminal ownership, the complete VT cleanup, and finite child
+timeouts. The unit suite covers both terminfo headers, search precedence,
+malformed offsets, unterminated strings, size limits, padding grammar, terminal
+family boundaries, every termios flag group, and 256 generated parser inputs
+per run.
 
 ## Differences from ncurses
 
-The reset work `rst` performs is the same mechanism as ncurses `reset` / `tput reset` (both funnel into ncurses' `progs/reset_cmd.c`), minus the legacy sleep. For completeness, the exact, deliberate differences — verified against the ncurses source — are:
+`ree` follows the reset path used by ncurses `reset` and `tput reset`, with
+these deliberate changes:
 
-- **The settling sleep is removed.** `/usr/bin/reset` calls `napms(1000)` after emitting the reset strings (`tset.c`), a hardware-settling delay retained from 3BSD for mechanical terminals. `tput reset` never had it. `rst` matches `tput reset`: no sleep.
-- **No tabstop reprogramming.** Between `rs2` and `rs3`, ncurses' `reset_tabstops` clears and re-sets hardware tab stops using the `init_tabs`, `clear_all_tabs`, and `set_tab` capabilities. `rst` omits this; terminal emulators do not use hardware tabs, so it is dead work there. This matters only for a real terminal with non-default tab stops.
-- **No `reset_file`/`init_file`.** ncurses can `cat` a per-terminal initialization file named by the `rf`/`if` capability. `rst` does not read or emit arbitrary files during reset.
-- **No alternate margin fallback.** If `clear_margins` (`mgc`) is absent, ncurses falls back to `set_lr_margin` / `set_left_margin`+`set_right_margin` (and a space-fill when only the latter pair exists). `rst` sends `mgc` only; on a terminal lacking `mgc` it clears no margins.
-- **VT cleanup prelude is extra.** For known VT-compatible terminals `rst` first sends a short sequence to disable synchronized output, mouse reporting, focus events, and bracketed paste. ncurses does not do this; it relies on the terminfo strings alone.
-- **Missing-entry fallback is extra.** When no terminfo entry exists, ncurses aborts; `rst` instead emits a fixed VT reset sequence so a terminal emulator can still be recovered (common when SSHing to an older host).
-- **Simpler padding handling.** `rst` removes terminfo `$<delay>` markers instead of sleeping or emitting pad bytes scaled to baud rate the way `tputs` does. Terminal emulators process output instantly; this only affects physical serial terminals.
+- It omits the historical settling sleep.
+- It does not reprogram hardware tab stops.
+- It does not read `reset_file` or `init_file` capabilities.
+- It sends `clear_margins` when present and omits ncurses' alternate margin
+  fallback.
+- It adds the VT cleanup prelude for known terminal emulators.
+- It uses a fixed VT sequence when the terminfo entry is missing.
+- It removes terminfo delay markers instead of sleeping or writing pad bytes.
 
-The one behavioral difference that matters for the common case is the removed settling delay. For a real serial or physical terminal where the delay, tabstops, or margin fallbacks matter, use `/usr/bin/reset`.
+These choices target terminal emulators and pseudo-terminals. Use the system
+`reset` command for a physical or serial terminal that depends on hardware
+delays, tab-stop programming, or alternate margin handling.
 
-## Benchmark
+## Prior art
 
-Measured on macOS 26.6 / arm64 (Apple Silicon) in a pseudo-TTY harness. Absolute numbers vary by machine and harness overhead; the intentional one-second delay dominates the conclusion.
-
-```text
-/usr/bin/reset:     1012 ms   (napms(1000) settling sleep)
-/usr/bin/reset -I:     2.7 ms  (TTY repair only, skips the sleep)
-/usr/bin/tput reset:   3.2 ms
-rst:                  1.9 ms
-```
-
-`rst` is the fastest of the variants — dropping the ncurses dependency eliminates library initialization overhead — and ~530× faster than `/usr/bin/reset` for the common terminal-emulator case.
-
-## Status
-
-CI builds and runs the PTY test on macOS arm64 and Linux x86_64. Tagged releases publish binaries for macOS and Linux on arm64 and x86_64; Linux binaries are statically linked, while macOS binaries link only the system `libSystem`.
+- [rauchg/rst](https://github.com/rauchg/rst) supplies the direct design and
+  compatibility target for this Rust implementation.
+- [BusyBox reset](https://git.busybox.net/busybox/tree/console-tools/reset.c)
+  restores a small fixed set of terminal behaviors without a settling sleep.
+- [Toybox reset](https://github.com/landley/toybox/blob/master/toys/other/reset.c)
+  combines terminal mode repair with fixed escape sequences.
+- ncurses routes both `reset` and `tput reset` through its shared reset code.
 
 ## License
 

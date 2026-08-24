@@ -1,0 +1,78 @@
+[package]
+name = "ree-cli"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.95"
+description = "A fast terminal reset for macOS and Linux"
+authors = ["Sean Mozeik <sean@mozeik.com>"]
+readme = "README.md"
+license = "Apache-2.0"
+repository = "https://github.com/seanmozeik/ree"
+homepage = "https://github.com/seanmozeik/ree"
+documentation = "https://docs.rs/ree-cli"
+keywords = ["terminal", "tty", "terminfo", "reset"]
+categories = ["command-line-utilities"]
+default-run = "ree"
+include = ["src/**", "Cargo.toml", "Cargo.lock", "README.md", "LICENSE"]
+
+[lib]
+name = "ree"
+path = "src/lib.rs"
+
+[[bin]]
+name = "ree"
+path = "src/main.rs"
+
+[dependencies]
+fs-err = "3.3.1"
+libc = "0.2.189"
+rustix = { version = "1.1.4", features = ["fs", "process", "stdio", "termios"] }
+thiserror = "2.0.20"
+usage = { package = "usage-rs", version = "6.4.0" }
+
+[dev-dependencies]
+proptest = "1.11.0"
+tempfile = "3.27.0"
+
+[lints.rust]
+missing_debug_implementations = "warn"
+missing_docs = "warn"
+unsafe_code = "deny"
+unused_must_use = "deny"
+
+[lints.clippy]
+all = { level = "warn", priority = -1 }
+complexity = { level = "warn", priority = -1 }
+correctness = { level = "deny", priority = -1 }
+dbg_macro = "deny"
+expect_used = "warn"
+nursery = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+perf = { level = "warn", priority = -1 }
+print_stdout = "warn"
+style = { level = "warn", priority = -1 }
+suspicious = { level = "deny", priority = -1 }
+todo = "warn"
+unwrap_used = "deny"
+
+[lints.rustdoc]
+broken_intra_doc_links = "deny"
+private_intra_doc_links = "warn"
+
+[profile.release]
+opt-level = "z"
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+strip = true
+
+[profile.bench]
+inherits = "release"
+debug = true
+strip = false
+
+[profile.dev]
+debug = true
+
+[profile.dev.package."*"]
+opt-level = 3
