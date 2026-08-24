@@ -91,22 +91,26 @@ build-release:
 [group('build')]
 [doc('Build the arm64 macOS release binary')]
 build-release-darwin-arm64:
+    rustup target add aarch64-apple-darwin
     just _cargo build --release --target aarch64-apple-darwin --locked
 
 [group('build')]
 [doc('Build the x86-64 macOS release binary')]
 build-release-darwin-x64:
-    just _cargo zigbuild --release --target x86_64-apple-darwin --locked
+    rustup target add x86_64-apple-darwin
+    PATH="$HOME/.cargo/bin:$PATH" "$HOME/.cargo/bin/cargo" zigbuild --release --target x86_64-apple-darwin --locked
 
 [group('build')]
 [doc('Build the arm64 Linux release binary with cargo-zigbuild')]
 build-release-linux-arm64:
-    just _cargo zigbuild --release --target aarch64-unknown-linux-gnu.2.17 --locked
+    rustup target add aarch64-unknown-linux-gnu
+    PATH="$HOME/.cargo/bin:$PATH" "$HOME/.cargo/bin/cargo" zigbuild --release --target aarch64-unknown-linux-gnu.2.17 --locked
 
 [group('build')]
 [doc('Build the x86-64 Linux release binary with cargo-zigbuild')]
 build-release-linux-x64:
-    just _cargo zigbuild --release --target x86_64-unknown-linux-gnu.2.17 --locked
+    rustup target add x86_64-unknown-linux-gnu
+    PATH="$HOME/.cargo/bin:$PATH" "$HOME/.cargo/bin/cargo" zigbuild --release --target x86_64-unknown-linux-gnu.2.17 --locked
 
 [group('build')]
 [doc('Build all four supported release targets')]
