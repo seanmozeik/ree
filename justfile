@@ -96,7 +96,7 @@ build-release-darwin-arm64:
 [group('build')]
 [doc('Build the x86-64 macOS release binary')]
 build-release-darwin-x64:
-    just _cargo build --release --target x86_64-apple-darwin --locked
+    just _cargo zigbuild --release --target x86_64-apple-darwin --locked
 
 [group('build')]
 [doc('Build the arm64 Linux release binary with cargo-zigbuild')]
