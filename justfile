@@ -194,13 +194,22 @@ pack-no-smoke: build-all
     bun scripts/npm-pack.ts --npm-org seanmozeik --max-bytes {{max_release_bytes}} --skip-smoke
 
 [group('package')]
+[doc('Reject generated files in the crates.io package')]
+cargo-package-contents:
+    @unexpected="$(just _cargo package --list --allow-dirty --locked | rg '^(npm|target|\.github)/' || true)"; \
+        if [[ -n "$unexpected" ]]; then \
+            printf 'unexpected files in crates.io package:\n%s\n' "$unexpected" >&2; \
+            exit 1; \
+        fi
+
+[group('package')]
 [doc('Validate the crates.io package without publishing')]
-publish-cargo-dry-run:
+publish-cargo-dry-run: cargo-package-contents
     just _cargo publish --dry-run --locked --allow-dirty
 
 [group('package')]
 [doc('Publish ree-cli to crates.io')]
-publish-cargo:
+publish-cargo: cargo-package-contents
     just _cargo publish --locked
 
 [group('package')]

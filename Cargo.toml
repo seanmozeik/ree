@@ -13,7 +13,7 @@ documentation = "https://docs.rs/ree-cli"
 keywords = ["terminal", "tty", "terminfo", "reset"]
 categories = ["command-line-utilities"]
 default-run = "ree"
-include = ["src/**", "Cargo.toml", "Cargo.lock", "README.md", "LICENSE"]
+include = ["/src/**", "/Cargo.toml", "/Cargo.lock", "/README.md", "/LICENSE"]
 
 [lib]
 name = "ree"
