@@ -1,5 +1,15 @@
 # ree
 
+<p align="center">
+  <a href="https://tenor.com/bM7Yv.gif">
+    <img
+      src="https://media1.tenor.com/m/KAG0nKc-HqcAAAAC/rare-reeeeee.gif"
+      alt="Pepe the Frog shouting REEEEEE"
+      width="320"
+    >
+  </a>
+</p>
+
 `ree` restores a terminal after a program leaves the terminal driver or
 terminal emulator in an unusable state. If the terminal does not show input,
 type `ree` and press Enter. If raw mode prevents Enter from working, press
@@ -165,6 +175,40 @@ hardware tab-stop programming, or alternate margin handling.
 - It removes terminfo padding markers instead of waiting or writing pad bytes.
 - It adds a VT cleanup before the terminfo reset strings.
 - It uses a fixed VT sequence when a terminfo entry is absent.
+
+## Performance and binary size
+
+The table shows mean wall time in milliseconds. Lower values are better.
+
+| Command | `xterm-ghostty` | `xterm-256color` | `tmux-256color` | `screen-256color` | Average | Executable size |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Empty PTY | 4.72 | 4.92 | 4.27 | 4.24 | 4.54 | n/a |
+| `ree` 0.1.0 | 5.10 | 5.49 | 4.94 | 4.95 | 5.12 | 443 KiB (453,248 bytes) |
+| `rst` at `5a2d488` | 5.52 | 5.09 | 5.08 | 5.14 | 5.21 | 159 KiB (162,432 bytes) |
+| macOS `reset` | 1,015.89 | 1,014.90 | 1,014.17 | 1,015.83 | 1,015.20 | 133 KiB (136,256 bytes) |
+
+The empty PTY costs 4.54 milliseconds. The 0.09-millisecond difference
+between `ree` and `rst` is too small to show a useful speed advantage. Both
+commands finish in about 5 milliseconds. macOS `reset` takes about 1.015
+seconds, which is 198 times the `ree` time.
+
+The test ran on an arm64 Apple M1 Ultra with macOS 26.5.2 and Hyperfine 1.20.0.
+Each sample used a new pseudo-terminal with 24 rows and 80 columns. The harness
+cleared its input, output, and local terminal flags and disabled its control
+characters before it started the command. It also drained all command output.
+The Empty PTY row runs `/usr/bin/true` to show the harness cost. The `ree`,
+`rst`, and Empty PTY results use 100 runs after five warm-up runs. The `reset`
+results use 10 runs after one warm-up run.
+
+In a separate fault test, the harness stopped the pseudo-terminal output queue
+before it started each command. `ree` completed in 4.92 milliseconds, and
+`rst` completed in 5.12 milliseconds. macOS `reset` exceeded the five-second
+limit for every terminal profile.
+
+The sizes are installed file sizes on the test Mac. The `ree` and `rst` files
+contain arm64 code. `/usr/bin/reset` points to the universal `/usr/bin/tset`
+executable, which loads system ncurses. The 133 KiB value does not include
+ncurses.
 
 ## Build
 
